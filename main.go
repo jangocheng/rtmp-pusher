@@ -2,17 +2,24 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
-	"github.com/urfave/cli/v2"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/urfave/cli/v2"
+)
+
+var (
+	logPath = os.Getenv("LOG_PATH")
 )
 
 var rtmpFileFlag = &cli.StringFlag{
@@ -28,6 +35,7 @@ var videoFileFlag = &cli.StringFlag{
 }
 
 func main() {
+	var rtmpStreams int
 	app := &cli.App{
 		Flags: []cli.Flag{rtmpFileFlag, videoFileFlag},
 		Action: func(c *cli.Context) error {
@@ -43,26 +51,30 @@ func main() {
 				}
 
 				go pushStream(context.TODO(), rtmpAddr, videoFilePath)
+				rtmpStreams++
 				time.Sleep(time.Second)
 			})
 
 			return nil
 		},
 	}
-
-	err := app.Run(os.Args)
-	if err != nil {
-		log.Fatal(err)
+	if err := app.Run(os.Args); err != nil {
+		log.WithError(err).Fatalf("run error")
+	}
+	if rtmpStreams <= 0 {
+		log.Infof("no rtmp stream to push")
+		return
 	}
 
-	// 监听系统退出信号，确保defer执行
+	// 监听系统退出信号
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	<-signalChan
+	s := <-signalChan
+	log.Infof("quit with %s", s.String())
 }
 
 func pushStream(ctx context.Context, pushAddr string, pushFile string) error {
-	fmt.Printf("start pushing %s: %s\n", pushFile, pushAddr)
+	log.Infof("start pushing %s: %s", pushFile, pushAddr)
 	cmd := exec.CommandContext(ctx,
 		"ffmpeg",
 		"-re",
@@ -74,10 +86,13 @@ func pushStream(ctx context.Context, pushAddr string, pushFile string) error {
 		"-f", "flv",
 		pushAddr,
 	)
+	errOut := bytes.Buffer{}
+	cmd.Stdout = &errOut
+	cmd.Stderr = &errOut
 
 	err := cmd.Run()
 	if err != nil {
-		fmt.Printf("push %s failed: %s\n", pushAddr, err.Error())
+		log.Errorf("push %s failed: %s, %s", pushAddr, err.Error(), errOut.String())
 		return err
 	}
 
@@ -103,4 +118,13 @@ func rangeFileLine(filePath string, f func(line string)) error {
 			return err
 		}
 	}
+}
+
+func setupLogger() {
+	logFilePath := filepath.Join(logPath, "main.log")
+	file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		log.WithError(err).Fatalf("open file error: %s")
+	}
+	log.SetOutput(file)
 }
