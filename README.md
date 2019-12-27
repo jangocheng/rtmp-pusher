@@ -1,8 +1,10 @@
 # rtmp-pusher
 
+RTMP Pusher pushes a video to multiple RTMP Addresses. 
+
 ## Requirement
 
-- FFMpeg 4 or higher
+- FFmpeg 4 or higher
 
 ## Usage
 

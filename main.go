@@ -35,6 +35,8 @@ var videoFileFlag = &cli.StringFlag{
 }
 
 func main() {
+	setupLogger()
+
 	var rtmpStreams int
 	app := &cli.App{
 		Flags: []cli.Flag{rtmpFileFlag, videoFileFlag},
@@ -126,5 +128,7 @@ func setupLogger() {
 	if err != nil {
 		log.WithError(err).Fatalf("open file error: %s")
 	}
-	log.SetOutput(file)
+
+	writer := io.MultiWriter(file, os.Stderr)
+	log.SetOutput(writer)
 }
